@@ -103,7 +103,7 @@ async function askClawdbotGateway(
       method: "POST",
       headers,
       body: JSON.stringify(requestBody),
-      timeout: 120000, // 2분 타임아웃
+      timeout: 90000, // 90초 타임아웃
     });
 
     if (!response.ok) {
@@ -134,6 +134,9 @@ async function askClawdbotGateway(
 
 /**
  * Clawdbot에 메시지 전송 (통합 인터페이스)
+ * 
+ * 주의: 슬래시 명령어는 webhook-server.ts에서 처리됨
+ * 여기서는 순수 AI 대화만 처리
  */
 export async function askClawdbot(
   message: string,
@@ -147,60 +150,21 @@ export async function askClawdbot(
   } catch (error) {
     logger.error(`Failed to get Clawdbot response: ${error}`);
 
+    // 타임아웃 vs 기타 에러 구분
+    const errorMessage = String(error);
+    const isTimeout = errorMessage.includes("timeout") || errorMessage.includes("ETIMEDOUT");
+
     // 폴백 응답
     return {
-      text: "죄송합니다. AI 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+      text: isTimeout 
+        ? "⏳ 응답 생성에 시간이 걸리고 있어요. 잠시 후 다시 시도하거나, 더 간단한 질문을 해주세요!"
+        : "죄송합니다. AI 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
       metadata: {
         toolsUsed: [],
         processingTime: 0,
       },
     };
   }
-}
-
-/**
- * 특수 명령어 처리
- */
-export function handleSpecialCommand(
-  command: string
-): { handled: boolean; response?: string } {
-  const cmd = command.toLowerCase().trim();
-
-  // /help 명령어
-  if (cmd === "/help" || cmd === "도움말") {
-    return {
-      handled: true,
-      response: `🦞 Clawdbot 도움말
-
-**기본 명령어**
-• /help - 도움말 표시
-• /clear - 대화 기록 초기화
-• /status - 시스템 상태 확인
-
-**사용 방법**
-자유롭게 질문하시면 AI가 답변해드립니다!
-
-예시:
-• "오늘 할 일 정리해줘"
-• "이메일 초안 작성해줘"
-• "코드 리뷰 부탁해"`,
-    };
-  }
-
-  // /status 명령어
-  if (cmd === "/status" || cmd === "상태") {
-    return {
-      handled: true,
-      response: `🦞 Clawdbot 상태
-
-✅ 서버: 정상
-✅ AI: 연결됨
-📍 Gateway: ${config.clawdbot.gatewayUrl}
-🤖 모델: ${config.clawdbot.model || "기본값"}`,
-    };
-  }
-
-  return { handled: false };
 }
 
 /**

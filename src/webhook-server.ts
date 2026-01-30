@@ -8,6 +8,7 @@ import { KakaoSkillRequest, KakaoSkillResponse } from "./types";
 import {
   createImmediateResponse,
   createTextResponse,
+  addQuickReplies,
   sendCallback,
   sendErrorCallback,
 } from "./kakao-api";
@@ -19,7 +20,8 @@ import {
   clearConversationHistory,
   getSessionStats,
 } from "./session-manager";
-import { askClawdbot, handleSpecialCommand } from "./clawdbot-bridge";
+import { askClawdbot } from "./clawdbot-bridge";
+import { handleCommand, isCommand } from "./command-handler";
 import { config } from "./config";
 import { logger } from "./logger";
 
@@ -106,16 +108,16 @@ async function handleWithoutCallback(
     );
   }
 
-  // 특수 명령어 처리
-  const specialResult = handleSpecialCommand(utterance);
-  if (specialResult.handled && specialResult.response) {
-    return createTextResponse(specialResult.response);
-  }
-
-  // /clear 명령어
-  if (utterance.toLowerCase() === "/clear" || utterance === "대화 초기화") {
-    clearConversationHistory(kakaoId);
-    return createTextResponse("✅ 대화 기록이 초기화되었습니다.");
+  // 슬래시 명령어 처리 (Gateway 명령어 포함)
+  if (isCommand(utterance)) {
+    const commandResult = await handleCommand(utterance, kakaoId);
+    if (commandResult.handled && commandResult.response) {
+      let response = createTextResponse(commandResult.response);
+      if (commandResult.quickReplies) {
+        response = addQuickReplies(response, commandResult.quickReplies);
+      }
+      return response;
+    }
   }
 
   // 콜백 없이도 AI 응답 처리 (동기식, 5초 제한 주의)
@@ -158,20 +160,22 @@ async function processMessageAsync(
       return;
     }
 
-    // 특수 명령어 처리
-    const specialResult = handleSpecialCommand(utterance);
-    if (specialResult.handled && specialResult.response) {
-      await sendCallback(callbackUrl, specialResult.response);
-      return;
-    }
-
-    // /clear 명령어
-    if (utterance.toLowerCase() === "/clear" || utterance === "대화 초기화") {
-      clearConversationHistory(kakaoId);
-      await sendCallback(callbackUrl, "✅ 대화 기록이 초기화되었습니다.", {
-        quickReplies: [{ label: "새 대화 시작", message: "안녕하세요" }],
-      });
-      return;
+    // 슬래시 명령어 처리 (Gateway 명령어 포함)
+    if (isCommand(utterance)) {
+      const commandResult = await handleCommand(utterance, kakaoId);
+      if (commandResult.handled && commandResult.response) {
+        // 명령어 핸들러가 퀵리플라이를 지정했으면 그것 사용, 아니면 기본값
+        const quickReplies = commandResult.quickReplies || (
+          utterance.toLowerCase().startsWith("/clear")
+            ? [{ label: "새 대화 시작", message: "안녕하세요" }]
+            : [
+                { label: "도움말", message: "/help" },
+                { label: "상태", message: "/status" },
+              ]
+        );
+        await sendCallback(callbackUrl, commandResult.response, { quickReplies });
+        return;
+      }
     }
 
     // 대화 기록에 사용자 메시지 추가
