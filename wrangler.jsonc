@@ -1,0 +1,8 @@
+{
+  "name": "clawdbot-kakaotalk",
+  "compatibility_date": "2026-02-02",
+  "main": "dist/index.js",
+  "observability": {
+    "enabled": true
+  }
+}
